@@ -27,3 +27,7 @@ depcomp
 .settings
 man/armsoc.4
 /m4
+debian/
+build/
+compile
+*.patch
