@@ -28,29 +28,7 @@
 #include <xf86drm.h>
 #include <sys/ioctl.h>
 
-/* Following ioctls should be included from libdrm exynos_drm.h but
- * libdrm doesn't install this correctly so for now they are here.
- */
-struct drm_exynos_plane_set_zpos {
-	__u32 plane_id;
-	__s32 zpos;
-};
-#define DRM_EXYNOS_PLANE_SET_ZPOS 0x06
-#define DRM_IOCTL_EXYNOS_PLANE_SET_ZPOS DRM_IOWR(DRM_COMMAND_BASE + \
-		DRM_EXYNOS_PLANE_SET_ZPOS, struct drm_exynos_plane_set_zpos)
-
-#define EXYNOS_BO_CONTIG 0
-#define EXYNOS_BO_NONCONTIG 1
-
-struct drm_exynos_gem_create {
-	uint64_t size;
-	unsigned int flags;
-	unsigned int handle;
-};
-
-#define DRM_EXYNOS_GEM_CREATE 0x00
-#define DRM_IOCTL_EXYNOS_GEM_CREATE DRM_IOWR(DRM_COMMAND_BASE + \
-		DRM_EXYNOS_GEM_CREATE, struct drm_exynos_gem_create)
+#include <exynos_drmif.h>
 
 /* Cursor dimensions
  * Technically we probably don't have any size limit.. since we
@@ -100,48 +78,29 @@ static int init_plane_for_cursor(int drm_fd, uint32_t plane_id)
 		drmModeFreeObjectProperties(props);
 	}
 
-	if (res) {
-		/* Try the old method */
-		struct drm_exynos_plane_set_zpos data;
-		data.plane_id = plane_id;
-		data.zpos = 1;
-
-		res = ioctl(drm_fd, DRM_IOCTL_EXYNOS_PLANE_SET_ZPOS, &data);
-	}
-
 	return res;
 }
 
-#define EXYNOS_BO_WC (1 << 2)
-
 static int create_custom_gem(int fd, struct armsoc_create_gem *create_gem)
 {
-	struct drm_exynos_gem_create create_exynos;
-	int ret;
-	unsigned int pitch;
+	struct exynos_device *ed;
+	struct exynos_bo *bo;
+
+	ed = malloc(sizeof(*ed));
+	if(!ed)
+		return -1;
+
+	ed->fd = fd;
 
 	/* make pitch a multiple of 64 bytes for best performance */
-	pitch = ALIGN(create_gem->width * ((create_gem->bpp + 7) / 8), 64);
-	memset(&create_exynos, 0, sizeof(create_exynos));
-	create_exynos.size = create_gem->height * pitch;
+	create_gem->pitch = ALIGN(create_gem->width * ((create_gem->bpp + 7) / 8), 64);
+	create_gem->size = create_gem->height * create_gem->pitch;
 
-	assert((create_gem->buf_type == ARMSOC_BO_SCANOUT) ||
-			(create_gem->buf_type == ARMSOC_BO_NON_SCANOUT));
+	bo = exynos_bo_create(ed, create_gem->size, EXYNOS_BO_NONCONTIG | EXYNOS_BO_WC);
+	if (!bo)
+		return -1;
 
-	/* Contiguous allocations are not supported in some exynos drm versions.
-	 * When they are supported all allocations are effectively contiguous
-	 * anyway, so for simplicity we always request non contiguous buffers.
-	 */
-	create_exynos.flags = EXYNOS_BO_NONCONTIG | EXYNOS_BO_WC;
-
-	ret = drmIoctl(fd, DRM_IOCTL_EXYNOS_GEM_CREATE, &create_exynos);
-	if (ret)
-		return ret;
-
-	/* Convert custom create_exynos to generic create_gem */
-	create_gem->handle = create_exynos.handle;
-	create_gem->pitch = pitch;
-	create_gem->size = create_exynos.size;
+	create_gem->handle = bo->handle;
 
 	return 0;
 }
