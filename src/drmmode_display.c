@@ -50,6 +50,7 @@
 
 #include <libudev.h>
 #include "drmmode_driver.h"
+#include <sys/stat.h>
 
 struct drmmode_cursor_rec {
 	/* hardware cursor: */
