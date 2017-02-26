@@ -86,11 +86,7 @@ static int create_custom_gem(int fd, struct armsoc_create_gem *create_gem)
 	struct exynos_device *ed;
 	struct exynos_bo *bo;
 
-	ed = malloc(sizeof(*ed));
-	if(!ed)
-		return -1;
-
-	ed->fd = fd;
+	ed = exynos_device_create(fd);
 
 	/* make pitch a multiple of 64 bytes for best performance */
 	create_gem->pitch = ALIGN(create_gem->width * ((create_gem->bpp + 7) / 8), 64);
