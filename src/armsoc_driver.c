@@ -27,6 +27,10 @@
  *    Rob Clark <rob@ti.com>
  */
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -36,10 +40,6 @@
 #include <sys/mman.h>
 
 #include <pixman.h>
-
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
 
 #include "armsoc_driver.h"
 
@@ -312,7 +312,6 @@ ARMSOCOpenDRM(ScrnInfoPtr pScrn)
 		connection.fd = pARMSOC->drmFD;
 		connection.open_count = 1;
 		connection.master_count = 1;
-		drmmode_init_wakeup_handler(pARMSOC);
 	} else {
 		assert(connection.open_count);
 		connection.open_count++;
@@ -337,7 +336,6 @@ ARMSOCCloseDRM(ScrnInfoPtr pScrn)
 		connection.open_count--;
 		if (!connection.open_count) {
 			assert(!connection.master_count);
-			drmmode_fini_wakeup_handler(pARMSOC);
 			drmClose(pARMSOC->drmFD);
 			connection.fd = -1;
 		}
@@ -727,6 +725,39 @@ out:
 }
 
 /**
+ * Find a drmmode driver with the same name as the underlying
+ * drm kernel driver
+*/
+static struct drmmode_interface *get_drmmode_implementation(int drm_fd)
+{
+	drmVersionPtr version;
+	struct drmmode_interface *ret = NULL;
+	struct drmmode_interface *ifaces[] = {
+		&exynos_interface,
+		&pl111_interface,
+		&kirin_interface,
+		&sti_interface,
+	};
+	int i;
+
+	version = drmGetVersion(drm_fd);
+	if (!version)
+		return NULL;
+
+	for (i = 0; i < ARRAY_SIZE(ifaces); i++) {
+		struct drmmode_interface *iface = ifaces[i];
+		if (strcmp(version->name, iface->driver_name) == 0) {
+			ret = iface;
+			break;
+		}
+	}
+
+	drmFreeVersion(version);
+	return ret;
+}
+
+
+/**
  * The driver's PreInit() function.  Additional hardware probing is allowed
  * now, including display configuration.
  */
@@ -809,7 +840,7 @@ ARMSOCPreInit(ScrnInfoPtr pScrn, int flags)
 		goto fail;
 
 	pARMSOC->drmmode_interface =
-			drmmode_interface_get_implementation(pARMSOC->drmFD);
+			get_drmmode_implementation(pARMSOC->drmFD);
 	if (!pARMSOC->drmmode_interface)
 		goto fail2;
 
